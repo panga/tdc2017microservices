@@ -1,0 +1,3 @@
+DATA_DIR=/var/consul/data
+BOOTSTRAP_EXPECT=1
+OPTIONS="-ui -log-level=INFO"

@@ -1,0 +1,1165 @@
+{
+   "AWSTemplateFormatVersion":"2010-09-09",
+   "Description":"Weave-enabled AWS CloudFormation template to create resources required to run tasks on an ECS cluster.",
+   "Outputs": {
+     "HTTP": {
+       "Value": {
+         "Fn::Join": [
+           "",
+           [
+             "http://",
+             {
+               "Fn::GetAtt": [
+                 "EcsFrontendElasticLoadBalancing",
+                 "DNSName"
+               ]
+             }
+           ]
+         ]
+       },
+       "Description": "ELB Frontend"
+     },
+     "Consul": {
+       "Value": {
+         "Fn::Join": [
+           "",
+           [
+             "http://",
+             {
+               "Fn::GetAtt": [
+                 "EcsFrontendElasticLoadBalancing",
+                 "DNSName"
+               ]
+             },
+             ":8500"
+           ]
+         ]
+       },
+       "Description": "Consul UI"
+     },
+     "Fabio": {
+       "Value": {
+         "Fn::Join": [
+           "",
+           [
+             "http://",
+             {
+               "Fn::GetAtt": [
+                 "EcsFrontendElasticLoadBalancing",
+                 "DNSName"
+               ]
+             },
+             ":9998"
+           ]
+         ]
+       },
+       "Description": "Fabio UI"
+     },
+     "Grafana": {
+       "Value": {
+         "Fn::Join": [
+           "",
+           [
+             "http://",
+             {
+               "Fn::GetAtt": [
+                 "EcsFrontendElasticLoadBalancing",
+                 "DNSName"
+               ]
+             },
+             "/grafana"
+           ]
+         ]
+       },
+       "Description": "Grafana"
+     },
+     "Keycloak": {
+       "Value": {
+         "Fn::Join": [
+           "",
+           [
+             "http://",
+             {
+               "Fn::GetAtt": [
+                 "EcsFrontendElasticLoadBalancing",
+                 "DNSName"
+               ]
+             },
+             "/keycloak"
+           ]
+         ]
+       },
+       "Description": "Keycloak"
+     }
+   },
+   "Mappings":{
+     "WeaveworksEcsAmiIds": {
+       "us-east-1": {
+         "ImageId": "ami-275ffe31"
+       },
+       "us-east-2": {
+         "ImageId": "ami-62745007"
+       },      
+       "us-west-1": {
+         "ImageId": "ami-689bc208"
+       },
+       "us-west-2": {
+         "ImageId": "ami-62d35c02"
+       },
+       "eu-west-1": {
+         "ImageId": "ami-95f8d2f3"
+       },
+       "eu-west-2": {
+         "ImageId": "ami-bf9481db"
+       },
+       "eu-central-1": {
+         "ImageId": "ami-085e8a67"
+       },
+       "ap-northeast-1": {
+         "ImageId": "ami-f63f6f91"
+       },
+       "ap-southeast-1": {
+         "ImageId": "ami-b4ae1dd7"
+       },
+       "ap-southeast-2": {
+         "ImageId": "ami-fbe9eb98"
+       },
+       "ca-central-1": {
+         "ImageId": "ami-ee58e58a"
+       }
+     }
+   },
+   "Metadata" : {
+      "AWS::CloudFormation::Interface" : {
+         "ParameterGroups" : [
+         {
+           "Label" : {"default": "ECS Configuration"},
+           "Parameters" : ["ECSClusterName", "InitialClusterSize", "EcsInstanceType", "KeyName", "LogRetention"]
+         },
+         {
+           "Label" : {"default": "Network Configuration"},
+           "Parameters" : ["VPCCIDR", "Subnet1CIDR", "Subnet2CIDR", "Subnet3CIDR", "VXLanCIDR", "RemoteAccessCIDR"]
+         }]
+       }
+   },
+   "Parameters":{
+      "ECSClusterName":{
+         "Type":"String",
+         "Description":"Name of ECS cluster (e.g. acme)",
+         "MinLength":"1",
+         "ConstraintDescription":"must be a valid name"
+      },
+      "InitialClusterSize":{
+         "Type":"Number",
+         "Description":"Initial size of ECS cluster",
+         "Default":"3",
+         "MinValue":"3",
+         "ConstraintDescription":"must be greater or equal to 3 to provide HA and failover"
+      },
+      "EcsInstanceType":{
+         "Type":"String",
+         "Description":"Type of the EC2 instance(s) used in launch configuration",
+         "Default":"t2.small",
+         "AllowedValues":[
+            "t2.micro",
+            "t2.small",
+            "t2.medium",
+            "t2.large",
+            "m3.medium",
+            "m3.large",
+            "m3.xlarge",
+            "m3.2xlarge",
+            "m4.large",
+            "m4.xlarge",
+            "m4.2xlarge",
+            "m4.4xlarge",
+            "m4.10xlarge",
+            "m4.16xlarge",
+            "c4.large",
+            "c4.xlarge",
+            "c4.2xlarge",
+            "c4.4xlarge",
+            "c4.8xlarge",
+            "c3.large",
+            "c3.xlarge",
+            "c3.2xlarge",
+            "c3.4xlarge",
+            "c3.8xlarge",
+            "r3.large",
+            "r3.xlarge",
+            "r3.2xlarge",
+            "r3.4xlarge",
+            "r3.8xlarge",
+            "x1.16xlarge",
+            "x1.32xlarge"
+         ],
+         "ConstraintDescription":"must be a valid EC2 instance type"
+      },
+      "KeyName":{
+         "Type":"AWS::EC2::KeyPair::KeyName",
+         "Description":"Name of an existing EC2 KeyPair to enable SSH access to the ECS instances",
+         "MinLength":"1",
+         "ConstraintDescription":"must be the name of an existing EC2 KeyPair"
+      },
+      "LogRetention":{
+         "Type":"Number",
+         "Description":"Number of days log events are kept",
+         "Default":"30",
+         "MinValue":"1",
+         "MaxValue":"365",
+         "ConstraintDescription":"must be between 1 and 365"
+      },
+      "VPCCIDR":{
+         "AllowedPattern":"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(16))$",
+         "ConstraintDescription":"CIDR block parameter must be in the form x.x.x.x/16",
+         "Default":"10.32.0.0/16",
+         "Description":"CIDR Block for the VPC",
+         "Type":"String"
+      },
+      "Subnet1CIDR":{
+         "AllowedPattern":"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(24))$",
+         "ConstraintDescription":"CIDR block parameter must be in the form x.x.x.x/24",
+         "Default":"10.32.0.0/24",
+         "Description":"CIDR block for subnet 1 located in Availability Zone 1",
+         "Type":"String"
+      },
+      "Subnet2CIDR":{
+         "AllowedPattern":"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(24))$",
+         "ConstraintDescription":"CIDR block parameter must be in the form x.x.x.x/24",
+         "Default":"10.32.1.0/24",
+         "Description":"CIDR block for subnet 2 located in Availability Zone 2",
+         "Type":"String"
+      },
+      "Subnet3CIDR":{
+         "AllowedPattern":"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(24))$",
+         "ConstraintDescription":"CIDR block parameter must be in the form x.x.x.x/24",
+         "Default":"10.32.2.0/24",
+         "Description":"CIDR block for subnet 3 located in Availability Zone 3",
+         "Type":"String"
+      },
+      "VXLanCIDR":{
+         "AllowedPattern":"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(19))$",
+         "ConstraintDescription":"CIDR block parameter must be in the form x.x.x.x/19",
+         "Default":"10.32.32.0/19",
+         "Description":"CIDR block for VXLan between ECS instances",
+         "Type":"String"
+      },
+      "RemoteAccessCIDR":{
+         "AllowedPattern":"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+         "ConstraintDescription":"CIDR block parameter must be in the form x.x.x.x/x",
+         "Default":"0.0.0.0/0",
+         "Description":"CIDR block for external access (SSH)",
+         "Type":"String"
+      }
+   },
+   "Conditions":{
+   },
+   "Resources":{
+      "EcsCluster":{
+         "Type":"AWS::ECS::Cluster",
+         "Properties":{
+            "ClusterName":{
+               "Ref":"ECSClusterName"
+            }
+         }
+      },
+      "Vpc":{
+         "Type":"AWS::EC2::VPC",
+         "Properties":{
+            "EnableDnsSupport":"true",
+            "EnableDnsHostnames":"true",
+            "CidrBlock":{
+               "Ref":"VPCCIDR"
+            },
+            "Tags":[
+               {
+                  "Key":"Name",
+                  "Value":{
+                     "Ref":"ECSClusterName"
+                  }
+               }
+            ]
+         }
+      },
+      "Subnet1":{
+         "Type":"AWS::EC2::Subnet",
+         "Properties":{
+            "VpcId":{
+               "Ref":"Vpc"
+            },
+            "CidrBlock":{
+               "Ref":"Subnet1CIDR"
+            },
+            "AvailabilityZone":{
+               "Fn::Select":[
+                  "0",
+                  {
+                     "Fn::GetAZs":{
+                        "Ref":"AWS::Region"
+                     }
+                  }
+               ]
+            }
+         }
+      },
+      "Subnet2":{
+         "Type":"AWS::EC2::Subnet",
+         "Properties":{
+            "VpcId":{
+               "Ref":"Vpc"
+            },
+            "CidrBlock":{
+               "Ref":"Subnet2CIDR"
+            },
+            "AvailabilityZone":{
+               "Fn::Select":[
+                  "1",
+                  {
+                     "Fn::GetAZs":{
+                        "Ref":"AWS::Region"
+                     }
+                  }
+               ]
+            }
+         }
+      },
+      "Subnet3":{
+         "Type":"AWS::EC2::Subnet",
+         "Properties":{
+            "VpcId":{
+               "Ref":"Vpc"
+            },
+            "CidrBlock":{
+               "Ref":"Subnet3CIDR"
+            },
+            "AvailabilityZone":{
+               "Fn::Select":[
+                  "2",
+                  {
+                     "Fn::GetAZs":{
+                        "Ref":"AWS::Region"
+                     }
+                  }
+               ]
+            }
+         }
+      },
+      "InternetGateway":{
+         "Type":"AWS::EC2::InternetGateway"
+      },
+      "AttachGateway":{
+         "Type":"AWS::EC2::VPCGatewayAttachment",
+         "Properties":{
+            "VpcId":{
+               "Ref":"Vpc"
+            },
+            "InternetGatewayId":{
+               "Ref":"InternetGateway"
+            }
+         }
+      },
+      "RouteViaIgw":{
+         "Type":"AWS::EC2::RouteTable",
+         "Properties":{
+            "VpcId":{
+               "Ref":"Vpc"
+            }
+         }
+      },
+      "PublicRouteViaIgw":{
+         "Type":"AWS::EC2::Route",
+         "DependsOn":"AttachGateway",
+         "Properties":{
+            "RouteTableId":{
+               "Ref":"RouteViaIgw"
+            },
+            "DestinationCidrBlock":"0.0.0.0/0",
+            "GatewayId":{
+               "Ref":"InternetGateway"
+            }
+         }
+      },
+      "Subnet1RouteTableAssociation":{
+         "Type":"AWS::EC2::SubnetRouteTableAssociation",
+         "Properties":{
+            "SubnetId":{
+               "Ref":"Subnet1"
+            },
+            "RouteTableId":{
+               "Ref":"RouteViaIgw"
+            }
+         }
+      },
+      "Subnet2RouteTableAssociation":{
+         "Type":"AWS::EC2::SubnetRouteTableAssociation",
+         "Properties":{
+            "SubnetId":{
+               "Ref":"Subnet2"
+            },
+            "RouteTableId":{
+               "Ref":"RouteViaIgw"
+            }
+         }
+      },
+      "Subnet3RouteTableAssociation":{
+         "Type":"AWS::EC2::SubnetRouteTableAssociation",
+         "Properties":{
+            "SubnetId":{
+               "Ref":"Subnet3"
+            },
+            "RouteTableId":{
+               "Ref":"RouteViaIgw"
+            }
+         }
+      },
+      "EcsSecurityGroup":{
+         "Type":"AWS::EC2::SecurityGroup",
+         "Properties":{
+            "GroupDescription":"ECS Allowed Ports",
+            "VpcId":{
+               "Ref":"Vpc"
+            }
+         }
+      },
+      "EcsSecurityGroupIngressWebPort":{
+         "Type":"AWS::EC2::SecurityGroupIngress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"tcp",
+            "FromPort":"80",
+            "ToPort":"80",
+            "CidrIp":{
+               "Ref":"RemoteAccessCIDR"
+            }
+         }
+      },
+      "EcsSecurityGroupIngressCadvisorPort":{
+         "Type":"AWS::EC2::SecurityGroupIngress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"tcp",
+            "FromPort":"8080",
+            "ToPort":"8080",
+            "CidrIp":{
+               "Ref":"RemoteAccessCIDR"
+            }
+         }
+      },
+      "EcsSecurityGroupIngressConsulPort":{
+         "Type":"AWS::EC2::SecurityGroupIngress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"tcp",
+            "FromPort":"8500",
+            "ToPort":"8500",
+            "CidrIp":{
+               "Ref":"RemoteAccessCIDR"
+            }
+         }
+      },
+      "EcsSecurityGroupIngressFabioUIPort":{
+         "Type":"AWS::EC2::SecurityGroupIngress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"tcp",
+            "FromPort":"9998",
+            "ToPort":"9998",
+            "CidrIp":{
+               "Ref":"RemoteAccessCIDR"
+            }
+         }
+      },
+      "EcsSecurityGroupIngressFabioPort":{
+         "Type":"AWS::EC2::SecurityGroupIngress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"tcp",
+            "FromPort":"9999",
+            "ToPort":"9999",
+            "CidrIp":{
+               "Ref":"RemoteAccessCIDR"
+            }
+         }
+      },
+      "EcsSecurityGroupIngressSshPort":{
+         "Type":"AWS::EC2::SecurityGroupIngress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"tcp",
+            "FromPort":"22",
+            "ToPort":"22",
+            "CidrIp":{
+               "Ref":"RemoteAccessCIDR"
+            }
+         }
+      },
+      "EcsSecurityGroupIngressSGAllPort":{
+         "Type":"AWS::EC2::SecurityGroupIngress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"-1",
+            "FromPort":"-1",
+            "ToPort":"-1",
+            "SourceSecurityGroupId":{
+               "Ref":"EcsSecurityGroup"
+            }
+         }
+      },
+      "EcsSecurityGroupEgressAllPort":{
+         "Type":"AWS::EC2::SecurityGroupEgress",
+         "Properties":{
+            "GroupId":{
+               "Ref":"EcsSecurityGroup"
+            },
+            "IpProtocol":"-1",
+            "FromPort":"-1",
+            "ToPort":"-1",
+            "CidrIp":"0.0.0.0/0"
+         }
+      },
+      
+      "EcsInstancePolicy": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": [
+                    "ec2.amazonaws.com"
+                  ]
+                },
+                "Action": [
+                  "sts:AssumeRole"
+                ]
+              }
+            ]
+          },
+          "Path": "/",
+          "ManagedPolicyArns": [
+            "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+          ],
+          "Policies": [
+            {
+              "PolicyName": "ClusterInstanceRole",
+              "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ecs:CreateCluster",
+                      "ecs:DeregisterContainerInstance",
+                      "ecs:DiscoverPollEndpoint",
+                      "ecs:Poll",
+                      "ecs:RegisterContainerInstance",
+                      "ecs:Submit*",
+                      "ecs:ListClusters",
+                      "ecs:ListContainerInstances",
+                      "ecs:DescribeContainerInstances",
+  		    "ecs:ListServices",
+                      "ecs:DescribeTasks",
+                      "ecs:DescribeServices",
+                      "ec2:DescribeInstances",
+                      "ec2:DescribeTags",
+                      "autoscaling:DescribeAutoScalingInstances"
+                    ],
+                    "Resource": [
+                      "*"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "EcsInstanceProfile": {
+        "Type": "AWS::IAM::InstanceProfile",
+        "Properties": {
+          "Path": "/",
+          "Roles": [
+            {
+              "Ref": "EcsInstancePolicy"
+            }
+          ]
+        }
+      },
+      "EcsInstanceLaunchConfiguration":{
+         "Type":"AWS::AutoScaling::LaunchConfiguration",
+         "Properties":{
+            "ImageId":{
+               "Fn::FindInMap":[
+                  "WeaveworksEcsAmiIds",
+                  {
+                     "Ref":"AWS::Region"
+                  },
+                  "ImageId"
+               ]
+            },
+            "InstanceType":{
+               "Ref":"EcsInstanceType"
+            },
+            "AssociatePublicIpAddress":true,
+            "IamInstanceProfile":{
+               "Ref":"EcsInstanceProfile"
+            },
+            "KeyName":{
+               "Ref":"KeyName"
+            },
+            "SecurityGroups":[
+               {
+                  "Ref":"EcsSecurityGroup"
+               }
+            ],
+            "UserData":{
+               "Fn::Base64":{
+                  "Fn::Join":[
+                     "\n",
+                     [
+                        "#!/bin/bash -ex",
+                        "yum install -y aws-cfn-bootstrap",
+                        {
+                           "Fn::Join":[
+                              " ",
+                              [
+                                 "/opt/aws/bin/cfn-init",
+                                 "--verbose",
+                                 "--stack",
+                                 {
+                                    "Ref":"AWS::StackName"
+                                 },
+                                 "--region",
+                                 {
+                                    "Ref":"AWS::Region"
+                                 },
+                                 "--resource",
+                                 "EcsInstanceLaunchConfiguration"
+                              ]
+                           ]
+                        }
+                     ]
+                  ]
+               }
+            }
+         },
+         "Metadata":{
+            "AWS::CloudFormation::Init":{
+               "config":{
+                  "commands":{
+                     "consul":{
+                        "command":"echo \"BOOTSTRAP_EXPECT=$BOOTSTRAP_EXPECT\" >> /etc/default/consul",
+                        "env":{
+                           "BOOTSTRAP_EXPECT":{
+                              "Ref":"InitialClusterSize"
+                           }
+                        }
+                     },
+                     "weave":{
+                        "command":"echo \"CIDR=$CIDR\" >> /etc/default/weave",
+                        "env":{
+                           "CIDR":{
+                              "Ref":"VXLanCIDR"
+                           }
+                        }
+                     }
+                  },
+                  "files":{
+                     "/etc/ecs/ecs.config":{
+                        "content":{
+                           "Fn::Join":[
+                              "",
+                              [
+                                 "ECS_CLUSTER=",
+                                 {
+                                    "Ref":"ECSClusterName"
+                                 }
+                              ]
+                           ]
+                        }
+                     },
+                     "/usr/local/bin/weave": {
+                       "source": {
+                         "Fn::Join": [
+                           "/",
+                           [
+                             "https://github.com/weaveworks/weave/releases/download",
+                             "v1.9.4",
+                             "weave"
+                           ]
+                         ]
+                       },
+                       "mode": "000755"
+                     },
+                     "/etc/init/ecs.override": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/ecs.override"
+                     },
+                     "/etc/init/weave.conf": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/weave.conf"
+                     },
+                     "/etc/init/cadvisor.conf": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/cadvisor.conf"
+                     },
+                     "/etc/init/consul.conf": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/consul.conf"
+                     },
+                     "/etc/init/node-exporter.conf": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/node-exporter.conf"
+                     },
+                     "/etc/init/proxy.conf": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/proxy.conf"
+                     },
+                     "/etc/init/registrator.conf": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/registrator.conf"
+                     },
+                     "/etc/sysconfig/docker": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/docker"
+                     },
+                     "/etc/default/weave": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/weave"
+                     },
+                     "/etc/default/aws": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/aws"
+                     },
+                     "/etc/default/consul": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/consul"
+                     },
+                     "/etc/default/proxy": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/proxy"
+                     },
+                     "/etc/weave/run.sh": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/run.sh",
+                       "mode": "000755"
+                     },
+                     "/etc/weave/peers.sh": {
+                       "source": "https://raw.github.com/panga/tdc2017microservices/master/to-upload/peers.sh",
+                       "mode": "000755"
+                     }
+                  }
+               }
+            }
+         }
+      },
+      "EcsInstanceAsg":{
+         "Type":"AWS::AutoScaling::AutoScalingGroup",
+         "Properties":{
+            "VPCZoneIdentifier":[
+               {
+                  "Fn::Join":[
+                     ",",
+                     [
+                        {
+                           "Ref":"Subnet1"
+                        },
+                        {
+                           "Ref":"Subnet2"
+                        },
+                        {
+                           "Ref":"Subnet3"
+                        }
+                     ]
+                  ]
+               }
+            ],
+            "LaunchConfigurationName":{
+               "Ref":"EcsInstanceLaunchConfiguration"
+            },
+            "MinSize":{
+               "Ref":"InitialClusterSize"
+            },
+            "MaxSize":{
+               "Ref":"InitialClusterSize"
+            },
+            "DesiredCapacity":{
+               "Ref":"InitialClusterSize"
+            },
+            "LoadBalancerNames":[
+               {
+                  "Ref":"EcsFrontendElasticLoadBalancing"
+               }
+            ],
+            "Tags":[
+               {
+                  "Key":"Name",
+                  "Value":{
+                     "Fn::Join":[
+                        "",
+                        [
+                           "ECS - ",
+                           {
+                              "Ref":"ECSClusterName"
+                           }
+                        ]
+                     ]
+                  },
+                  "PropagateAtLaunch":"true"
+               }
+            ]
+         }
+      },
+      "EcsFrontendElasticLoadBalancing":{
+         "Type":"AWS::ElasticLoadBalancing::LoadBalancer",
+         "DependsOn":"InternetGateway",
+         "Properties":{
+            "Listeners":[
+              {
+                 "LoadBalancerPort":"80",
+                 "InstancePort":"9999",
+                 "InstanceProtocol":"TCP",
+                 "Protocol":"TCP"
+              },
+              {
+                 "LoadBalancerPort":"9998",
+                 "InstancePort":"9998",
+                 "InstanceProtocol":"TCP",
+                 "Protocol":"TCP"
+              },
+              {
+                 "LoadBalancerPort":"8500",
+                 "InstancePort":"8500",
+                 "InstanceProtocol":"TCP",
+                 "Protocol":"TCP"
+              }
+            ],
+            "CrossZone":true,
+            "HealthCheck": {
+               "HealthyThreshold" : "2",
+               "Interval" : "10",
+               "Target" : "TCP:9999",
+               "Timeout" : "5",
+               "UnhealthyThreshold" : "2"
+            },
+            "SecurityGroups":[
+               {
+                  "Ref":"EcsSecurityGroup"
+               }
+            ],
+            "Subnets":[
+               {
+                  "Ref":"Subnet1"
+               },
+               {
+                  "Ref":"Subnet2"
+               },
+               {
+                  "Ref":"Subnet3"
+               }
+            ]
+         }
+      },
+      "PrometheusTaskDefinition": {
+         "Type": "AWS::ECS::TaskDefinition",
+         "Properties": {
+           "Family": {
+               "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "AWS::StackName"
+                    },
+                    "-PrometheusService"
+                  ]
+               ]
+            },
+            "ContainerDefinitions": [
+               {
+                  "Name": "prometheus",
+                  "Essential": "true",
+                  "Image": "prom/prometheus:v1.5.1",
+                  "Command": [
+                    {
+                      "Fn::Join": [
+                        "\n",
+                        [
+                          "echo \"ALERT service_down",
+                          "    IF up == 0",
+                          "    FOR 30s",
+                          "    ANNOTATIONS {",
+                          "      summary = 'Service {{ $LABELS.instance }} {{ $LABELS.job }} is down.',",
+                          "      description = '{{ $LABELS.instance }} ({{ $LABELS.job }}) service is down more than 30 seconds.'",
+                          "    }",
+                          "",
+                          "ALERT high_load",
+                          "    IF node_load1 > 0.8",
+                          "    ANNOTATIONS {",
+                          "      summary = 'Instance {{ $LABELS.instance }} under high load',",
+                          "      description = '{{ $LABELS.instance }} is under high load.'",
+                          "    }\" > /etc/prometheus/alert.rules &&",
+                          "echo \"global:",
+                          "    scrape_interval:     15s",
+                          "    evaluation_interval: 15s",
+                          "    external_labels:",
+                          "        monitor: 'microservices'",
+                          "rule_files:",
+                          "    - \"alert.rules\"",
+                          "scrape_configs:",
+                          "    - job_name: 'prometheus'",
+                          "      scrape_interval: 5s",
+                          "      consul_sd_configs:",
+                          "      - server: 'consul:8500'",
+                          "        services: ['cadvisor','node-exporter']",
+                          "      relabel_configs:",
+                          "      - source_labels: ['__meta_consul_service']",
+                          "        regex:    '(.*)'",
+                          "        target_label:  'job'",
+                          "        replacement:   '$FIRST_GROUP'",
+                          "      - source_labels: ['__meta_consul_address']",
+                          "        regex:         '(.*)'",
+                          "        target_label:  'instance'",
+                          "        replacement:   '$FIRST_GROUP'",
+                          "      - source_labels: ['__meta_consul_address','__meta_consul_service_port']",
+                          "        regex:         '(.*);(.*)'",
+                          "        target_label:  '__address__'",
+                          "        replacement:   '$FIRST_GROUP:$SECOND_GROUP'\" > /etc/prometheus/prometheus.yml && /bin/prometheus -config.file=/etc/prometheus/prometheus.yml -storage.local.path=/prometheus -storage.local.memory-chunks=10000 -web.external-url=http://$(hostname):9090/prometheus"
+                        ]
+                      ]
+                    }
+                  ],
+                  "EntryPoint": [
+                    "sh",
+                    "-c"
+                  ],
+                  "Environment": [
+                    {
+                      "Name": "FIRST_GROUP",
+                      "Value": "$1"
+                    },
+                    {
+                      "Name": "SECOND_GROUP",
+                      "Value": "$2"
+                    },
+                    {
+                      "Name": "LABELS",
+                      "Value": "$labels"
+                    },
+                    {
+                      "Name": "SERVICE_9090_NAME",
+                      "Value": "prometheus"
+                    },
+                    {
+                      "Name": "SERVICE_9090_CHECK_TCP",
+                      "Value": "true"
+                    },
+                    {
+                      "Name": "SERVICE_9090_CHECK_INTERVAL",
+                      "Value": "10s"
+                    },
+                    {
+                      "Name": "SERVICE_9090_TAGS",
+                      "Value": "urlprefix-/prometheus"
+                    }
+                  ],
+                  "Hostname": "prometheus",
+                  "MemoryReservation": "300",
+                  "LogConfiguration": {
+                     "LogDriver": "awslogs",
+                     "Options": {
+                        "awslogs-group": {
+                           "Ref": "EcsLogGroup"
+                        },
+                        "awslogs-region": {
+                           "Ref": "AWS::Region"
+                        },
+                        "awslogs-stream-prefix": "monitoring"
+                     }
+                  },
+                  "PortMappings": [
+                    {
+                      "ContainerPort": 9090
+                    }
+                  ]
+               }
+            ]
+         }
+      },
+      "GrafanaTaskDefinition": {
+         "Type": "AWS::ECS::TaskDefinition",
+         "Properties": {
+           "Family": {
+               "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "AWS::StackName"
+                    },
+                    "-GrafanaService"
+                  ]
+               ]
+            },
+            "ContainerDefinitions": [
+               {
+                  "Name": "grafana",
+                  "Command": ["(apt-get update && apt-get -y --no-install-recommends install curl && apt-get install -y netcat-openbsd && while ! nc -zw2 grafana 3000 ;do echo \"sleeping 5 seconds to wait grafana \";sleep 5;done && curl 'http://admin:admin@grafana:3000/api/datasources' -X POST -H 'Content-Type: application/json;charset=UTF-8' --data-binary '{\"name\":\"prometheus\",\"type\":\"prometheus\",\"url\":\"http://prometheus:9090/prometheus\",\"access\":\"proxy\",\"isDefault\":true}' && curl 'http://admin:admin@grafana:3000/api/dashboards/db' -X POST -H 'Content-Type: application/json;charset=UTF-8' --data-binary '{\"dashboard\":{\"__requires\":[{\"type\":\"grafana\",\"id\":\"grafana\",\"name\":\"Grafana\",\"version\":\"4.1.1\"},{\"type\":\"panel\",\"id\":\"graph\",\"name\":\"Graph\",\"version\":\"\"},{\"type\":\"datasource\",\"id\":\"prometheus\",\"name\":\"prometheus\",\"version\":\"1.0.0\"},{\"type\":\"panel\",\"id\":\"singlestat\",\"name\":\"Singlestat\",\"version\":\"\"}],\"annotations\":{\"list\":[]},\"description\":\"Containers metrics\",\"editable\":true,\"gnetId\":null,\"graphTooltip\":1,\"hideControls\":false,\"id\":null,\"links\":[],\"refresh\":\"10s\",\"rows\":[{\"collapse\":false,\"height\":138,\"panels\":[{\"cacheTimeout\":null,\"colorBackground\":false,\"colorValue\":false,\"colors\":[\"rgba(50, 172, 45, 0.97)\",\"rgba(237, 129, 40, 0.89)\",\"rgba(245, 54, 54, 0.9)\"],\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"format\":\"percent\",\"gauge\":{\"maxValue\":100,\"minValue\":0,\"show\":true,\"thresholdLabels\":false,\"thresholdMarkers\":true},\"hideTimeOverride\":true,\"id\":4,\"interval\":null,\"links\":[],\"mappingType\":1,\"mappingTypes\":[{\"name\":\"value to text\",\"value\":1},{\"name\":\"range to text\",\"value\":2}],\"maxDataPoints\":100,\"nullPointMode\":\"connected\",\"nullText\":null,\"postfix\":\"\",\"postfixFontSize\":\"50%\",\"prefix\":\"\",\"prefixFontSize\":\"50%\",\"rangeMaps\":[{\"from\":\"null\",\"text\":\"N\/A\",\"to\":\"null\"}],\"span\":2,\"sparkline\":{\"fillColor\":\"rgba(31, 118, 189, 0.18)\",\"full\":false,\"lineColor\":\"rgb(31, 120, 193)\",\"show\":false},\"targets\":[{\"expr\":\"sum(rate(container_cpu_user_seconds_total{image!=\\\"\\\", instance=\\\"$instance\\\"}[1m])) \/ count(node_cpu{mode=\\\"system\\\", instance=\\\"$instance\\\"}) * 100\",\"interval\":\"10s\",\"intervalFactor\":1,\"legendFormat\":\"\",\"refId\":\"A\",\"step\":10}],\"thresholds\":\"65, 90\",\"timeFrom\":\"10s\",\"title\":\"CPU Load\",\"transparent\":false,\"type\":\"singlestat\",\"valueFontSize\":\"80%\",\"valueMaps\":[{\"op\":\"=\",\"text\":\"N\/A\",\"value\":\"null\"}],\"valueName\":\"avg\"},{\"cacheTimeout\":null,\"colorBackground\":false,\"colorValue\":false,\"colors\":[\"rgba(245, 54, 54, 0.9)\",\"rgba(237, 129, 40, 0.89)\",\"rgba(50, 172, 45, 0.97)\"],\"datasource\":\"prometheus\",\"editable\":true,\"error\":false,\"format\":\"none\",\"gauge\":{\"maxValue\":100,\"minValue\":0,\"show\":false,\"thresholdLabels\":false,\"thresholdMarkers\":true},\"id\":7,\"interval\":null,\"links\":[],\"mappingType\":1,\"mappingTypes\":[{\"name\":\"value to text\",\"value\":1},{\"name\":\"range to text\",\"value\":2}],\"maxDataPoints\":100,\"nullPointMode\":\"connected\",\"nullText\":null,\"postfix\":\"\",\"postfixFontSize\":\"50%\",\"prefix\":\"\",\"prefixFontSize\":\"50%\",\"rangeMaps\":[{\"from\":\"null\",\"text\":\"N\/A\",\"to\":\"null\"}],\"span\":1,\"sparkline\":{\"fillColor\":\"rgba(31, 118, 189, 0.18)\",\"full\":false,\"lineColor\":\"rgb(31, 120, 193)\",\"show\":false},\"targets\":[{\"expr\":\"machine_cpu_cores{instance=\\\"$instance\\\"}\",\"interval\":\"\",\"intervalFactor\":2,\"legendFormat\":\"\",\"metric\":\"machine_cpu_cores\",\"refId\":\"A\",\"step\":60}],\"thresholds\":\"\",\"title\":\"CPU Cores\",\"type\":\"singlestat\",\"valueFontSize\":\"80%\",\"valueMaps\":[{\"op\":\"=\",\"text\":\"N\/A\",\"value\":\"null\"}],\"valueName\":\"avg\"},{\"cacheTimeout\":null,\"colorBackground\":false,\"colorValue\":false,\"colors\":[\"rgba(50, 172, 45, 0.97)\",\"rgba(237, 129, 40, 0.89)\",\"rgba(245, 54, 54, 0.9)\"],\"datasource\":\"prometheus\",\"editable\":true,\"error\":false,\"format\":\"percent\",\"gauge\":{\"maxValue\":100,\"minValue\":0,\"show\":true,\"thresholdLabels\":false,\"thresholdMarkers\":true},\"hideTimeOverride\":true,\"id\":5,\"interval\":null,\"links\":[],\"mappingType\":1,\"mappingTypes\":[{\"name\":\"value to text\",\"value\":1},{\"name\":\"range to text\",\"value\":2}],\"maxDataPoints\":100,\"nullPointMode\":\"connected\",\"nullText\":null,\"postfix\":\"\",\"postfixFontSize\":\"50%\",\"prefix\":\"\",\"prefixFontSize\":\"50%\",\"rangeMaps\":[{\"from\":\"null\",\"text\":\"N\/A\",\"to\":\"null\"}],\"span\":2,\"sparkline\":{\"fillColor\":\"rgba(31, 118, 189, 0.18)\",\"full\":false,\"lineColor\":\"rgb(31, 120, 193)\",\"show\":false},\"targets\":[{\"expr\":\"(sum(node_memory_MemTotal{instance=\\\"$instance\\\"}) - sum(node_memory_MemFree{instance=\\\"$instance\\\"}+node_memory_Buffers{instance=\\\"$instance\\\"}+node_memory_Cached{instance=\\\"$instance\\\"}) ) \/ sum(node_memory_MemTotal{instance=\\\"$instance\\\"}) * 100\",\"interval\":\"10s\",\"intervalFactor\":2,\"legendFormat\":\"\",\"refId\":\"A\",\"step\":20}],\"thresholds\":\"65, 90\",\"timeFrom\":\"10s\",\"title\":\"Memory Load\",\"transparent\":false,\"type\":\"singlestat\",\"valueFontSize\":\"80%\",\"valueMaps\":[{\"op\":\"=\",\"text\":\"N\/A\",\"value\":\"null\"}],\"valueName\":\"avg\"},{\"cacheTimeout\":null,\"colorBackground\":false,\"colorValue\":false,\"colors\":[\"rgba(245, 54, 54, 0.9)\",\"rgba(237, 129, 40, 0.89)\",\"rgba(50, 172, 45, 0.97)\"],\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"format\":\"bytes\",\"gauge\":{\"maxValue\":100,\"minValue\":0,\"show\":false,\"thresholdLabels\":false,\"thresholdMarkers\":true},\"hideTimeOverride\":true,\"id\":2,\"interval\":null,\"links\":[],\"mappingType\":1,\"mappingTypes\":[{\"name\":\"value to text\",\"value\":1},{\"name\":\"range to text\",\"value\":2}],\"maxDataPoints\":100,\"nullPointMode\":\"connected\",\"nullText\":null,\"postfix\":\"\",\"postfixFontSize\":\"50%\",\"prefix\":\"\",\"prefixFontSize\":\"50%\",\"rangeMaps\":[{\"from\":\"null\",\"text\":\"N\/A\",\"to\":\"null\"}],\"span\":2,\"sparkline\":{\"fillColor\":\"rgba(31, 118, 189, 0.18)\",\"full\":false,\"lineColor\":\"rgb(31, 120, 193)\",\"show\":false},\"targets\":[{\"expr\":\"sum(container_memory_usage_bytes{image!=\\\"\\\", instance=\\\"$instance\\\"})\",\"interval\":\"10s\",\"intervalFactor\":2,\"legendFormat\":\"\",\"refId\":\"A\",\"step\":20}],\"thresholds\":\"\",\"timeFrom\":\"10s\",\"title\":\"Used Memory\",\"transparent\":false,\"type\":\"singlestat\",\"valueFontSize\":\"80%\",\"valueMaps\":[{\"op\":\"=\",\"text\":\"N\/A\",\"value\":\"null\"}],\"valueName\":\"avg\"},{\"cacheTimeout\":null,\"colorBackground\":false,\"colorValue\":false,\"colors\":[\"rgba(50, 172, 45, 0.97)\",\"rgba(237, 129, 40, 0.89)\",\"rgba(245, 54, 54, 0.9)\"],\"datasource\":\"prometheus\",\"decimals\":null,\"editable\":true,\"error\":false,\"format\":\"percent\",\"gauge\":{\"maxValue\":100,\"minValue\":0,\"show\":true,\"thresholdLabels\":false,\"thresholdMarkers\":true},\"hideTimeOverride\":true,\"id\":6,\"interval\":null,\"links\":[],\"mappingType\":1,\"mappingTypes\":[{\"name\":\"value to text\",\"value\":1},{\"name\":\"range to text\",\"value\":2}],\"maxDataPoints\":100,\"nullPointMode\":\"connected\",\"nullText\":null,\"postfix\":\"\",\"postfixFontSize\":\"50%\",\"prefix\":\"\",\"prefixFontSize\":\"50%\",\"rangeMaps\":[{\"from\":\"null\",\"text\":\"N\/A\",\"to\":\"null\"}],\"span\":2,\"sparkline\":{\"fillColor\":\"rgba(31, 118, 189, 0.18)\",\"full\":false,\"lineColor\":\"rgb(31, 120, 193)\",\"show\":false},\"targets\":[{\"expr\":\"(node_filesystem_size{fstype=\\\"aufs\\\"} - node_filesystem_free{fstype=\\\"aufs\\\"}) \/ node_filesystem_size{fstype=\\\"aufs\\\"}  * 100\",\"interval\":\"30s\",\"intervalFactor\":1,\"legendFormat\":\"\",\"refId\":\"A\",\"step\":30}],\"thresholds\":\"65, 90\",\"timeFrom\":\"10s\",\"title\":\"Storage Load\",\"transparent\":false,\"type\":\"singlestat\",\"valueFontSize\":\"80%\",\"valueMaps\":[{\"op\":\"=\",\"text\":\"N\/A\",\"value\":\"null\"}],\"valueName\":\"avg\"},{\"cacheTimeout\":null,\"colorBackground\":false,\"colorValue\":false,\"colors\":[\"rgba(245, 54, 54, 0.9)\",\"rgba(237, 129, 40, 0.89)\",\"rgba(50, 172, 45, 0.97)\"],\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"format\":\"bytes\",\"gauge\":{\"maxValue\":100,\"minValue\":0,\"show\":false,\"thresholdLabels\":false,\"thresholdMarkers\":true},\"hideTimeOverride\":true,\"id\":3,\"interval\":null,\"links\":[],\"mappingType\":1,\"mappingTypes\":[{\"name\":\"value to text\",\"value\":1},{\"name\":\"range to text\",\"value\":2}],\"maxDataPoints\":100,\"nullPointMode\":\"connected\",\"nullText\":null,\"postfix\":\"\",\"postfixFontSize\":\"50%\",\"prefix\":\"\",\"prefixFontSize\":\"50%\",\"rangeMaps\":[{\"from\":\"null\",\"text\":\"N\/A\",\"to\":\"null\"}],\"span\":3,\"sparkline\":{\"fillColor\":\"rgba(31, 118, 189, 0.18)\",\"full\":false,\"lineColor\":\"rgb(31, 120, 193)\",\"show\":false},\"targets\":[{\"expr\":\"sum (container_fs_usage_bytes{instance=\\\"$instance\\\"})\",\"interval\":\"30s\",\"intervalFactor\":2,\"refId\":\"A\",\"step\":60}],\"thresholds\":\"\",\"timeFrom\":\"10s\",\"title\":\"Used Storage\",\"transparent\":false,\"type\":\"singlestat\",\"valueFontSize\":\"80%\",\"valueMaps\":[{\"op\":\"=\",\"text\":\"N\/A\",\"value\":\"null\"}],\"valueName\":\"avg\"}],\"repeat\":null,\"repeatIteration\":null,\"repeatRowId\":null,\"showTitle\":false,\"title\":\"Overview\",\"titleSize\":\"h6\"},{\"collapse\":false,\"height\":\"150px\",\"panels\":[{\"aliasColors\":{},\"bars\":true,\"datasource\":\"prometheus\",\"decimals\":0,\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":9,\"legend\":{\"avg\":false,\"current\":false,\"max\":false,\"min\":false,\"show\":false,\"total\":false,\"values\":false},\"lines\":false,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[],\"span\":4,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"count_scalar(container_memory_usage_bytes{image!=\\\"\\\", instance=\\\"$instance\\\"} > 0)\",\"interval\":\"\",\"intervalFactor\":2,\"legendFormat\":\"containers\",\"refId\":\"A\",\"step\":10}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"Running Containers\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":0,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"none\",\"label\":\"\",\"logBase\":1,\"max\":null,\"min\":0,\"show\":true},{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":true}]},{\"aliasColors\":{},\"bars\":true,\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":10,\"legend\":{\"avg\":false,\"current\":false,\"max\":false,\"min\":false,\"show\":false,\"total\":false,\"values\":false},\"lines\":false,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[{\"alias\":\"load 1m\",\"color\":\"#BF1B00\"}],\"span\":4,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"node_load1{instance=\\\"$instance\\\"}\",\"interval\":\"\",\"intervalFactor\":2,\"legendFormat\":\"load 1m\",\"metric\":\"node_load1\",\"refId\":\"A\",\"step\":10}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"System Load\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":0,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":0,\"show\":true},{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":false}]},{\"aliasColors\":{},\"bars\":false,\"datasource\":\"prometheus\",\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":15,\"legend\":{\"alignAsTable\":true,\"avg\":true,\"current\":false,\"max\":true,\"min\":true,\"rightSide\":true,\"show\":false,\"total\":false,\"values\":true},\"lines\":true,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[{\"alias\":\"read\",\"yaxis\":1},{\"alias\":\"written\",\"yaxis\":1},{\"alias\":\"io time\",\"yaxis\":2}],\"span\":4,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"sum(irate(node_disk_bytes_read{instance=\\\"$instance\\\"}[5m]))\",\"interval\":\"2s\",\"intervalFactor\":4,\"legendFormat\":\"read\",\"metric\":\"\",\"refId\":\"A\",\"step\":8},{\"expr\":\"sum(irate(node_disk_bytes_written{instance=\\\"$instance\\\"}[5m]))\",\"interval\":\"2s\",\"intervalFactor\":4,\"legendFormat\":\"written\",\"metric\":\"\",\"refId\":\"B\",\"step\":8},{\"expr\":\"sum(irate(node_disk_io_time_ms{instance=\\\"$instance\\\"}[5m]))\",\"interval\":\"2s\",\"intervalFactor\":4,\"legendFormat\":\"io time\",\"metric\":\"\",\"refId\":\"C\",\"step\":8}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"I\/O Usage\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":0,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"bytes\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":true},{\"format\":\"ms\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":true}]}],\"repeat\":null,\"repeatIteration\":null,\"repeatRowId\":null,\"showTitle\":false,\"title\":\"Host stats\",\"titleSize\":\"h6\"},{\"collapse\":false,\"height\":\"250px\",\"panels\":[{\"aliasColors\":{},\"bars\":false,\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":8,\"legend\":{\"alignAsTable\":true,\"avg\":true,\"current\":false,\"max\":true,\"min\":true,\"rightSide\":true,\"show\":true,\"total\":false,\"values\":true},\"lines\":true,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[],\"span\":12,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"sum(rate(container_cpu_user_seconds_total{image!=\\\"\\\", instance=\\\"$instance\\\"}[1m]) * 100  \/ count_scalar(node_cpu{mode=\\\"user\\\", instance=\\\"$instance\\\"})) by (name)\",\"intervalFactor\":10,\"legendFormat\":\"{{ name }}\",\"metric\":\"container_cpu_user_seconds_total\",\"refId\":\"A\",\"step\":20}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"Container CPU Usage\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":2,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"percent\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":0,\"show\":true},{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":false}]}],\"repeat\":null,\"repeatIteration\":null,\"repeatRowId\":null,\"showTitle\":false,\"title\":\"CPU\",\"titleSize\":\"h6\"},{\"collapse\":false,\"height\":\"250px\",\"panels\":[{\"aliasColors\":{},\"bars\":false,\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":11,\"legend\":{\"alignAsTable\":true,\"avg\":true,\"current\":false,\"max\":true,\"min\":true,\"rightSide\":true,\"show\":true,\"sort\":\"avg\",\"sortDesc\":true,\"total\":false,\"values\":true},\"lines\":true,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[],\"span\":12,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"sum(container_memory_usage_bytes{image!=\\\"\\\", instance=\\\"$instance\\\"}) by (name)\",\"intervalFactor\":1,\"legendFormat\":\"{{ name }}\",\"metric\":\"container_memory_usage\",\"refId\":\"A\",\"step\":2}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"Container Memory Usage\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":0,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"bytes\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":0,\"show\":true},{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":false}]},{\"aliasColors\":{},\"bars\":false,\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":12,\"legend\":{\"alignAsTable\":true,\"avg\":true,\"current\":false,\"max\":true,\"min\":true,\"rightSide\":true,\"show\":true,\"total\":false,\"values\":true},\"lines\":true,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[],\"span\":12,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"sum(container_memory_cache{image!=\\\"\\\", instance=\\\"$instance\\\"}) by (name)\",\"intervalFactor\":2,\"legendFormat\":\"{{name}}\",\"metric\":\"container_memory_cache\",\"refId\":\"A\",\"step\":4}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"Container Cached Memory Usage\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":0,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"bytes\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":0,\"show\":true},{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":false}]}],\"repeat\":null,\"repeatIteration\":null,\"repeatRowId\":null,\"showTitle\":false,\"title\":\"Memory\",\"titleSize\":\"h6\"},{\"collapse\":false,\"height\":\"250px\",\"panels\":[{\"aliasColors\":{},\"bars\":false,\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":13,\"legend\":{\"alignAsTable\":true,\"avg\":true,\"current\":false,\"max\":true,\"min\":true,\"rightSide\":true,\"show\":true,\"total\":false,\"values\":true},\"lines\":true,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[],\"span\":12,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"sum by (name) (rate(container_network_receive_bytes_total{image!=\\\"\\\", instance=\\\"$instance\\\"}[1m]))\",\"intervalFactor\":10,\"legendFormat\":\"{{ name }}\",\"metric\":\"container_network_receive_bytes_total\",\"refId\":\"A\",\"step\":20}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"Container Network Input\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":2,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"bytes\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":0,\"show\":true},{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":false}]},{\"aliasColors\":{},\"bars\":false,\"datasource\":\"prometheus\",\"decimals\":2,\"editable\":true,\"error\":false,\"fill\":1,\"grid\":{},\"id\":14,\"legend\":{\"alignAsTable\":true,\"avg\":true,\"current\":false,\"max\":true,\"min\":true,\"rightSide\":true,\"show\":true,\"total\":false,\"values\":true},\"lines\":true,\"linewidth\":2,\"links\":[],\"nullPointMode\":\"connected\",\"percentage\":false,\"pointradius\":5,\"points\":false,\"renderer\":\"flot\",\"seriesOverrides\":[],\"span\":12,\"stack\":false,\"steppedLine\":false,\"targets\":[{\"expr\":\"sum by (name) (rate(container_network_transmit_bytes_total{image!=\\\"\\\", instance=\\\"$instance\\\"}[1m]))\",\"intervalFactor\":10,\"legendFormat\":\"{{ name }}\",\"metric\":\"container_network_transmit_bytes_total\",\"refId\":\"A\",\"step\":20}],\"thresholds\":[],\"timeFrom\":null,\"timeShift\":null,\"title\":\"Container Network Output\",\"tooltip\":{\"msResolution\":true,\"shared\":true,\"sort\":2,\"value_type\":\"cumulative\"},\"type\":\"graph\",\"xaxis\":{\"mode\":\"time\",\"name\":null,\"show\":true,\"values\":[]},\"yaxes\":[{\"format\":\"bytes\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":0,\"show\":true},{\"format\":\"short\",\"label\":null,\"logBase\":1,\"max\":null,\"min\":null,\"show\":false}]}],\"repeat\":null,\"repeatIteration\":null,\"repeatRowId\":null,\"showTitle\":false,\"title\":\"Network\",\"titleSize\":\"h6\"}],\"schemaVersion\":14,\"style\":\"dark\",\"tags\":[\"docker\"],\"templating\":{\"list\":[{\"allValue\":null,\"current\":{},\"datasource\":\"prometheus\",\"hide\":0,\"includeAll\":false,\"label\":\"ECS Instance ( Docker Engine )\",\"multi\":false,\"name\":\"instance\",\"options\":[],\"query\":\"label_values(instance)\",\"refresh\":1,\"regex\":\"\",\"sort\":0,\"tagValuesQuery\":\"\",\"tags\":[],\"tagsQuery\":\"\",\"type\":\"query\",\"useTags\":false}]},\"time\":{\"from\":\"now-1h\",\"to\":\"now\"},\"timepicker\":{\"refresh_intervals\":[\"5s\",\"10s\",\"30s\",\"1m\",\"5m\",\"15m\",\"30m\",\"1h\",\"2h\",\"1d\"],\"time_options\":[\"5m\",\"15m\",\"1h\",\"6h\",\"12h\",\"24h\",\"2d\",\"7d\",\"30d\"]},\"timezone\":\"browser\",\"title\":\"Docker Containers\",\"version\":6},\"overwrite\":false}') > /var/log/grafana/setup.log & sh /run.sh"],
+                  "Essential": "true",
+                  "EntryPoint": [
+                    "sh",
+                    "-c"
+                  ],
+                  "Environment": [
+                    {
+                      "Name": "SERVICE_3000_NAME",
+                      "Value": "grafana"
+                    },
+                    {
+                      "Name": "SERVICE_3000_CHECK_TCP",
+                      "Value": "true"
+                    },
+                    {
+                      "Name": "SERVICE_3000_CHECK_INTERVAL",
+                      "Value": "10s"
+                    },
+                    {
+                      "Name": "SERVICE_3000_TAGS",
+                      "Value": "urlprefix-/grafana opts strip=/grafana"
+                    },
+                    {
+                      "Name": "GF_SERVER_ROOT_URL",
+                      "Value": "%(protocol)s://%(domain)s:%(http_port)s/grafana"
+                    }
+                  ],
+                  "Image": "grafana/grafana:4.1.1",
+                  "Hostname": "grafana",
+                  "MemoryReservation": "300",
+                  "LogConfiguration": {
+                     "LogDriver": "awslogs",
+                     "Options": {
+                        "awslogs-group": {
+                           "Ref": "EcsLogGroup"
+                        },
+                        "awslogs-region": {
+                           "Ref": "AWS::Region"
+                        },
+                        "awslogs-stream-prefix": "monitoring"
+                     }
+                  },
+                  "PortMappings": [
+                    {
+                      "ContainerPort": 3000
+                    }
+                  ]
+               }
+            ]
+         }
+      },
+      "KeycloakTaskDefinition": {
+         "Type": "AWS::ECS::TaskDefinition",
+         "Properties": {
+           "Family": {
+               "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "AWS::StackName"
+                    },
+                    "-KeycloakService"
+                  ]
+               ]
+            },
+            "ContainerDefinitions": [
+               {
+                  "Name": "keycloak",
+                  "Essential": "true",
+                  "Environment": [
+                    {
+                      "Name": "SERVICE_8080_NAME",
+                      "Value": "keycloak"
+                    },
+                    {
+                      "Name": "SERVICE_8080_CHECK_TCP",
+                      "Value": "true"
+                    },
+                    {
+                      "Name": "SERVICE_8080_CHECK_INTERVAL",
+                      "Value": "10s"
+                    },
+                    {
+                      "Name": "SERVICE_8080_TAGS",
+                      "Value": "urlprefix-/keycloak opts strip=/keycloak"
+                    },
+                    {
+                      "Name": "KEYCLOAK_USER",
+                      "Value": "admin"
+                    },
+                    {
+                      "Name": "KEYCLOAK_PASSWORD",
+                      "Value": "admin"
+                    }
+                  ],
+                  "Image": "jboss/keycloak:3.0.0.Final",
+                  "Hostname": "keycloak",
+                  "MemoryReservation": "512",
+                  "PortMappings": [
+                    {
+                      "ContainerPort": 8080
+                    }
+                  ]
+               }
+            ]
+         }
+      },
+      "PrometheusService": {
+         "Type": "AWS::ECS::Service",
+         "Properties": {
+            "Cluster": {
+               "Ref": "EcsCluster"
+            },
+            "DesiredCount": "1",
+            "TaskDefinition": {
+               "Ref": "PrometheusTaskDefinition"
+            }
+         }
+      },
+      "GrafanaService": {
+         "Type": "AWS::ECS::Service",
+         "DependsOn": "PrometheusService",
+         "Properties": {
+            "Cluster": {
+               "Ref": "EcsCluster"
+            },
+            "DesiredCount": "1",
+            "TaskDefinition": {
+               "Ref": "GrafanaTaskDefinition"
+            }
+         }
+      },
+      "KeycloakService": {
+         "Type": "AWS::ECS::Service",
+         "Properties": {
+            "Cluster": {
+               "Ref": "EcsCluster"
+            },
+            "DesiredCount": "1",
+            "TaskDefinition": {
+               "Ref": "KeycloakTaskDefinition"
+            }
+         }
+      },
+      "EcsLogGroup":{
+         "Type":"AWS::Logs::LogGroup",
+         "Properties":{
+            "LogGroupName":{
+               "Ref":"ECSClusterName"
+            },
+            "RetentionInDays":{
+               "Ref":"LogRetention"
+            }
+         }
+      }
+   }
+}
