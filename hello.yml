@@ -1,0 +1,13 @@
+version: '2'
+
+services:
+  hello:
+    image: tutum/hello-world:latest
+    hostname: hello
+    mem_limit: 128M
+    ports:
+      - 80
+    environment:
+      - SERVICE_80_NAME=hello
+      - SERVICE_80_TAGS=urlprefix-/hello
+      - SERVICE_80_CHECK_TCP=true
